@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { mcpInspectorApi } from '../api'
-import type { McpInspectorSession } from '../api/types'
+import type { McpInspectorRunResult, McpInspectorSession } from '../api/types'
 
 const form = reactive({
   variant: 'vulnerable' as 'vulnerable' | 'fixed',
@@ -11,7 +11,8 @@ const form = reactive({
 })
 
 const session = ref<McpInspectorSession>({ running: false })
-const loading = reactive({ start: false, stop: false })
+const runResult = ref<McpInspectorRunResult | null>(null)
+const loading = reactive({ start: false, stop: false, run: false })
 let pollTimer: number | undefined
 
 async function refresh() {
@@ -41,6 +42,22 @@ async function stop() {
 function openInspector() {
   if (session.value.uiUrl) {
     window.open(session.value.uiUrl, '_blank', 'noopener')
+  }
+}
+
+async function runOnce() {
+  loading.run = true
+  try {
+    runResult.value = await mcpInspectorApi.run({ ...form })
+    ElMessage.success(
+      runResult.value.timedOut
+        ? '验证已执行（等待超时属预期，漏洞在超时前已触发）'
+        : '验证执行完成',
+    )
+  } catch (e: unknown) {
+    ElMessage.error(e instanceof Error ? e.message : '验证执行失败')
+  } finally {
+    loading.run = false
   }
 }
 
@@ -104,11 +121,19 @@ onBeforeUnmount(() => {
 
             <el-form-item>
               <el-button
+                type="warning"
+                :loading="loading.run"
+                @click="runOnce"
+              >
+                一键验证（CLI 自动握手，无需跳转）
+              </el-button>
+              <el-button
                 type="primary"
+                plain
                 :loading="loading.start"
                 @click="start"
               >
-                启动 Inspector
+                启动 Web UI
               </el-button>
               <el-button
                 type="danger"
@@ -121,6 +146,7 @@ onBeforeUnmount(() => {
               </el-button>
               <el-button
                 type="success"
+                plain
                 :disabled="!session.running || !session.uiUrl"
                 @click="openInspector"
               >
@@ -128,6 +154,14 @@ onBeforeUnmount(() => {
               </el-button>
               <el-button @click="refresh">刷新状态</el-button>
             </el-form-item>
+
+            <el-alert
+              type="info"
+              :closable="false"
+              show-icon
+              title="一键验证会直接在本机运行 Inspector CLI（--method initialize），自动走完 initialize → 401 → OAuth 发现 → open()，不打开 Inspector 网页。命令最多等待 45 秒后强杀（OAuth 回调不会完成，超时属预期）；漏洞是否触发请看 CLI 输出与实验 Server 侧证据。"
+              style="margin-bottom: 8px"
+            />
           </el-form>
         </el-card>
       </el-col>
@@ -165,6 +199,42 @@ onBeforeUnmount(() => {
       </el-col>
     </el-row>
 
+    <el-card v-if="runResult" shadow="never" style="margin-top: 16px">
+      <template #header>
+        <div class="card-header">
+          <span>一键验证结果</span>
+          <el-tag
+            :type="runResult.variant === 'vulnerable' ? 'danger' : 'success'"
+            effect="dark"
+            size="small"
+          >
+            {{ runResult.version }}
+          </el-tag>
+        </div>
+      </template>
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="退出码">
+          {{ runResult.exitCode ?? '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="等待超时">
+          <el-tag :type="runResult.timedOut ? 'warning' : 'info'" size="small">
+            {{ runResult.timedOut ? '是（预期）' : '否' }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="耗时">
+          {{ (runResult.durationMs / 1000).toFixed(1) }} 秒
+        </el-descriptions-item>
+        <el-descriptions-item label="Server URL">
+          {{ runResult.serverUrl }}
+        </el-descriptions-item>
+        <el-descriptions-item label="执行命令" :span="2">
+          <code class="cmd-inline">{{ runResult.command }}</code>
+        </el-descriptions-item>
+      </el-descriptions>
+      <div class="run-output-label">CLI 输出</div>
+      <pre class="log-box">{{ runResult.output || '无输出' }}</pre>
+    </el-card>
+
     <el-card shadow="never" style="margin-top: 16px">
       <template #header>Inspector 日志</template>
       <pre class="log-box">{{ (session.logTail ?? []).join('\n') || '暂无日志' }}</pre>
@@ -197,6 +267,21 @@ onBeforeUnmount(() => {
   font-size: 12px;
   word-break: break-all;
   white-space: pre-wrap;
+}
+
+.cmd-inline {
+  padding: 2px 6px;
+  background: var(--el-fill-color-light);
+  border-radius: 4px;
+  font-size: 12px;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.run-output-label {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .log-box {

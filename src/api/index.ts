@@ -9,6 +9,7 @@ import type {
   AttackUnit,
   CreateReconTaskPayload,
   CreateTaskPayload,
+  McpInspectorRunResult,
   McpInspectorSession,
   McpInspectorStartPayload,
   PageResponse,
@@ -149,6 +150,10 @@ export const mcpInspectorApi = {
     http.post<McpInspectorSession>('/mcp-inspector/start', payload).then(({ data }) => data),
   stop: () =>
     http.post<McpInspectorSession>('/mcp-inspector/stop').then(({ data }) => data),
+  run: (payload: McpInspectorStartPayload) =>
+    http
+      .post<McpInspectorRunResult>('/mcp-inspector/run', payload, { timeout: 70_000 })
+      .then(({ data }) => data),
 }
 
 export const resourceApi = {

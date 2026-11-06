@@ -356,3 +356,15 @@ export interface McpInspectorSession {
   logTail?: string[]
   error?: string
 }
+
+export interface McpInspectorRunResult {
+  variant: 'vulnerable' | 'fixed'
+  version: string
+  transport: string
+  serverUrl: string
+  command: string
+  exitCode: number | null
+  timedOut: boolean
+  durationMs: number
+  output: string
+}
