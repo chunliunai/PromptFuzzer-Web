@@ -8,6 +8,7 @@ import type {
   ReconResult,
   ReconTask,
   ReconTrace,
+  ReplayProfile,
 } from '../api/types'
 import JsonBlock from '../components/common/JsonBlock.vue'
 import StatusTag from '../components/common/StatusTag.vue'
@@ -23,6 +24,7 @@ const task = ref<ReconTask>()
 const result = ref<ReconResult>()
 const traces = ref<ReconTrace[]>([])
 const surfaces = ref<ApplicationSurface[]>([])
+const replayProfiles = ref<ReplayProfile[]>([])
 const activeTab = ref('surfaces')
 
 const domainGroups = computed(() =>
@@ -46,8 +48,14 @@ const orphanCapabilities = computed(() =>
 async function loadData() {
   loading.value = true
   try {
-    task.value = await reconApi.getTask(taskId)
-    traces.value = await reconApi.getTraces(taskId)
+    const [taskData, traceData, replayProfileData] = await Promise.all([
+      reconApi.getTask(taskId),
+      reconApi.getTraces(taskId),
+      reconApi.getReplayProfiles(taskId),
+    ])
+    task.value = taskData
+    traces.value = traceData
+    replayProfiles.value = replayProfileData
     if (task.value.status === 'COMPLETED') {
       result.value = await reconApi.getResult(taskId)
       surfaces.value = await reconApi.getSurfaces(result.value.id)
@@ -106,6 +114,28 @@ async function deleteSurface(surface: ApplicationSurface) {
   } finally {
     deletingSurfaceId.value = undefined
   }
+}
+
+function routingField(trace: ReconTrace, field: string) {
+  const observation = trace.observation || ''
+  const matched = observation.match(new RegExp(`${field}=([^,；]+)`))
+  return matched?.[1]?.trim() || ''
+}
+
+function observationText(trace: ReconTrace) {
+  const observation = trace.observation || trace.errorMessage || '无观察结论'
+  return observation.replace(
+    /；(?:executionChannel|replayProfileId|replayProfileClassification|statusCode|contentType|fallbackType|fallbackReason)=.*$/,
+    '',
+  )
+}
+
+function tagType(value?: string) {
+  if (!value) return 'info'
+  if (value === 'HTTP_REPLAY' || value === 'HTTP_REPLAYABLE') return 'success'
+  if (value === 'BROWSER') return 'warning'
+  if (value.includes('FAILED') || value.includes('EXPIRED') || value.includes('TIMEOUT')) return 'danger'
+  return 'info'
 }
 
 onMounted(loadData)
@@ -181,6 +211,11 @@ onMounted(loadData)
         <span>结果版本</span>
         <strong>{{ result?.version ?? '-' }}</strong>
         <small>{{ result ? `Result #${result.id}` : '等待生成' }}</small>
+      </div>
+      <div class="metric-card">
+        <span>ReplayProfile</span>
+        <strong>{{ replayProfiles.length }}</strong>
+        <small>独立 RECON HTTP Replay</small>
       </div>
     </section>
 
@@ -297,7 +332,41 @@ onMounted(loadData)
                   <strong>{{ trace.actionType }}</strong>
                   <StatusTag :status="trace.status" />
                 </div>
-                <p>{{ trace.observation || trace.errorMessage || '无观察结论' }}</p>
+                <div
+                  v-if="routingField(trace, 'executionChannel')"
+                  class="tag-row trace-routing"
+                >
+                  <el-tag
+                    size="small"
+                    :type="tagType(routingField(trace, 'executionChannel'))"
+                    effect="plain"
+                  >
+                    {{ routingField(trace, 'executionChannel') }}
+                  </el-tag>
+                  <el-tag
+                    v-if="routingField(trace, 'replayProfileId')"
+                    size="small"
+                    effect="plain"
+                  >
+                    Profile #{{ routingField(trace, 'replayProfileId') }}
+                  </el-tag>
+                  <el-tag
+                    v-if="routingField(trace, 'replayProfileClassification')"
+                    size="small"
+                    :type="tagType(routingField(trace, 'replayProfileClassification'))"
+                    effect="plain"
+                  >
+                    {{ routingField(trace, 'replayProfileClassification') }}
+                  </el-tag>
+                  <el-tag
+                    v-if="routingField(trace, 'statusCode')"
+                    size="small"
+                    effect="plain"
+                  >
+                    HTTP {{ routingField(trace, 'statusCode') }}
+                  </el-tag>
+                </div>
+                <p>{{ observationText(trace) }}</p>
                 <small>
                   Trace #{{ trace.id }} · {{ trace.evidenceType || 'NO_EVIDENCE' }} ·
                   {{ trace.durationMs ?? 0 }}ms
@@ -306,6 +375,53 @@ onMounted(loadData)
             </el-timeline-item>
           </el-timeline>
           <el-empty v-if="!traces.length" description="暂无 Trace" />
+        </el-tab-pane>
+
+        <el-tab-pane label="HTTP Replay" name="replay">
+          <el-table :data="replayProfiles">
+            <el-table-column prop="id" label="ID" width="70" />
+            <el-table-column label="状态" width="150">
+              <template #default="{ row }">
+                <el-tag size="small" :type="tagType(row.classification)" effect="plain">
+                  {{ row.classification }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="目标会话" width="110">
+              <template #default="{ row }">{{ row.targetChatIndex ?? '-' }}</template>
+            </el-table-column>
+            <el-table-column label="接口" min-width="280">
+              <template #default="{ row }">
+                <div class="table-main">{{ row.method || '-' }} {{ row.url || '-' }}</div>
+                <div class="table-secondary">{{ row.endpointFingerprint || '-' }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="校验" width="120">
+              <template #default="{ row }">
+                {{ row.validationCount ?? 0 }} / {{ row.failureCount ?? 0 }}
+              </template>
+            </el-table-column>
+            <el-table-column label="最近失败" min-width="220">
+              <template #default="{ row }">
+                {{ row.lastFailureReason ? compactText(row.lastFailureReason, 140) : '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column type="expand">
+              <template #default="{ row }">
+                <div class="raw-grid">
+                  <div>
+                    <h3>Dynamic Bindings</h3>
+                    <JsonBlock :value="row.dynamicBindings" empty-text="暂无动态绑定" />
+                  </div>
+                  <div>
+                    <h3>Request Template</h3>
+                    <JsonBlock :value="row.requestTemplate" empty-text="暂无请求模板" />
+                  </div>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-if="!replayProfiles.length" description="暂无 ReplayProfile" />
         </el-tab-pane>
 
         <el-tab-pane label="原始结果" name="raw">

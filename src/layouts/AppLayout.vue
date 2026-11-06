@@ -4,6 +4,7 @@ import {
   Connection,
   DataAnalysis,
   Grid,
+  Monitor,
   Operation,
   Setting,
 } from '@element-plus/icons-vue'
@@ -17,6 +18,7 @@ const menuItems = [
   { path: '/recon', label: 'RECON 任务', icon: Compass },
   { path: '/tasks', label: '测试任务', icon: Operation },
   { path: '/resources', label: '资源配置', icon: Setting },
+  { path: '/mcp-inspector', label: 'MCP 调试', icon: Monitor },
 ]
 
 function activeMenu() {

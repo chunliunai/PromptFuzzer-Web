@@ -51,6 +51,12 @@ export const router = createRouter({
           component: () => import('../views/ResourcesView.vue'),
           meta: { title: '资源配置' },
         },
+        {
+          path: 'mcp-inspector',
+          name: 'mcp-inspector',
+          component: () => import('../views/McpInspectorView.vue'),
+          meta: { title: 'MCP 调试' },
+        },
       ],
     },
   ],

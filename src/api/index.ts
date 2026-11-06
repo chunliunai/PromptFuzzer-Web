@@ -4,17 +4,49 @@ import type {
   AgentSession,
   ApplicationSurface,
   AttackCandidate,
+  BrowserTargetProfile,
+  BrowserTargetProfilePayload,
   AttackUnit,
   CreateReconTaskPayload,
   CreateTaskPayload,
+  McpInspectorSession,
+  McpInspectorStartPayload,
   PageResponse,
   ReconResult,
   ReconTask,
+  ReplayProfile,
   ReconTrace,
   ScanResult,
   Task,
   WorkflowTrace,
 } from './types'
+
+export const browserApi = {
+  listTargets: () =>
+    http.get<BrowserTargetProfile[]>('/browser/targets').then(({ data }) => data),
+  getTarget: (targetType: string) =>
+    http
+      .get<BrowserTargetProfile>(`/browser/targets/${encodeURIComponent(targetType)}`)
+      .then(({ data }) => data),
+  saveTarget: (payload: BrowserTargetProfilePayload) =>
+    http.post<BrowserTargetProfile>('/browser/targets', payload).then(({ data }) => data),
+  startLogin: (payload: BrowserTargetProfilePayload) =>
+    http
+      .post<BrowserTargetProfile>('/browser/targets/login/start', payload)
+      .then(({ data }) => data),
+  signalAuthReady: (targetType: string) =>
+    http
+      .post<BrowserTargetProfile>(
+        `/browser/targets/${encodeURIComponent(targetType)}/auth-ready`,
+      )
+      .then(({ data }) => data),
+  clearAuth: (targetType: string) =>
+    http
+      .post<BrowserTargetProfile>(
+        `/browser/targets/${encodeURIComponent(targetType)}/clear-auth`,
+      )
+      .then(({ data }) => data),
+}
 
 export const reconApi = {
   listTasks: () => http.get<ReconTask[]>('/recon-tasks').then(({ data }) => data),
@@ -27,6 +59,10 @@ export const reconApi = {
     http.get<ReconResult>(`/recon-tasks/${taskId}/result`).then(({ data }) => data),
   getTraces: (taskId: number) =>
     http.get<ReconTrace[]>(`/recon-tasks/${taskId}/traces`).then(({ data }) => data),
+  getReplayProfiles: (taskId: number) =>
+    http
+      .get<ReplayProfile[]>(`/recon-tasks/${taskId}/replay-profiles`)
+      .then(({ data }) => data),
   getSurfaces: (resultId: number) =>
     http
       .get<ApplicationSurface[]>(`/recon-results/${resultId}/application-surfaces`)
@@ -92,6 +128,8 @@ export const taskApi = {
     http
       .get<PageResponse<ScanResult>>(`/tasks/${id}/results`, { params: { page, size } })
       .then(({ data }) => data),
+  getReplayProfiles: (id: number) =>
+    http.get<ReplayProfile[]>(`/tasks/${id}/replay-profiles`).then(({ data }) => data),
   getAgents: (id: number) =>
     http.get<AgentList>(`/tasks/${id}/agents`).then(({ data }) => data),
   getAgent: (taskId: number, sessionIndex: number) =>
@@ -102,6 +140,15 @@ export const taskApi = {
     http
       .get<WorkflowTrace[]>(`/tasks/${taskId}/agents/${sessionIndex}/traces`)
       .then(({ data }) => data),
+}
+
+export const mcpInspectorApi = {
+  status: () =>
+    http.get<McpInspectorSession>('/mcp-inspector/status').then(({ data }) => data),
+  start: (payload: McpInspectorStartPayload) =>
+    http.post<McpInspectorSession>('/mcp-inspector/start', payload).then(({ data }) => data),
+  stop: () =>
+    http.post<McpInspectorSession>('/mcp-inspector/stop').then(({ data }) => data),
 }
 
 export const resourceApi = {
